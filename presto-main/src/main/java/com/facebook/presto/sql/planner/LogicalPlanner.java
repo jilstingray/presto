@@ -290,7 +290,7 @@ public class LogicalPlanner
 
         TableHandle tableHandle = insertAnalysis.getTarget();
         List<ColumnHandle> columnHandles = insertAnalysis.getColumns();
-        WriterTarget target = new InsertReference(tableHandle, metadata.getTableMetadata(session, tableHandle).getTable());
+        WriterTarget target = new InsertReference(tableHandle, columnHandles, metadata.getTableMetadata(session, tableHandle).getTable());
 
         return buildInternalInsertPlan(tableHandle, columnHandles, insertStatement.getQuery(), analysis, target);
     }
@@ -304,18 +304,14 @@ public class LogicalPlanner
     {
         TableMetadata tableMetadata = metadata.getTableMetadata(session, tableHandle);
 
-        List<ColumnMetadata> visibleTableColumns = tableMetadata.getColumns().stream()
-                .filter(column -> !column.isHidden())
-                .collect(toImmutableList());
-        List<String> visibleTableColumnNames = visibleTableColumns.stream()
-                .map(ColumnMetadata::getName)
-                .collect(toImmutableList());
-
         SqlPlannerContext context = new SqlPlannerContext(0);
         RelationPlan plan = createRelationPlan(analysis, query, context);
 
         Map<String, ColumnHandle> columns = metadata.getColumnHandles(session, tableHandle);
         Assignments.Builder assignments = Assignments.builder();
+        boolean supportsMissingColumnsOnInsert = metadata.supportsMissingColumnsOnInsert(session, tableHandle);
+        ImmutableList.Builder<ColumnMetadata> insertedColumnsBuilder = ImmutableList.builder();
+
         for (ColumnMetadata column : tableMetadata.getColumns()) {
             if (column.isHidden()) {
                 continue;
@@ -323,6 +319,9 @@ public class LogicalPlanner
             VariableReferenceExpression output = variableAllocator.newVariable(getSourceLocation(query), column.getName(), column.getType());
             int index = columnHandles.indexOf(columns.get(column.getName()));
             if (index < 0) {
+                if (supportsMissingColumnsOnInsert) {
+                    continue;
+                }
                 Expression cast = new Cast(new NullLiteral(), column.getType().getTypeSignature().toString());
                 assignments.put(output, rowExpression(cast, context, analysis));
             }
@@ -339,15 +338,21 @@ public class LogicalPlanner
                     assignments.put(output, rowExpression(cast, context, analysis));
                 }
             }
+            insertedColumnsBuilder.add(column);
         }
         ProjectNode projectNode = new ProjectNode(idAllocator.getNextId(), plan.getRoot(), assignments.build());
 
-        List<Field> fields = visibleTableColumns.stream()
+        List<ColumnMetadata> insertedColumns = insertedColumnsBuilder.build();
+        List<Field> fields = insertedColumns.stream()
                 .map(column -> Field.newUnqualified(query.getLocation(), column.getName(), column.getType()))
                 .collect(toImmutableList());
         Scope scope = Scope.builder().withRelationType(RelationId.anonymous(), new RelationType(fields)).build();
 
         plan = new RelationPlan(projectNode, scope, projectNode.getOutputVariables());
+
+        List<String> insertedTableColumnNames = insertedColumns.stream()
+                .map(ColumnMetadata::getName)
+                .collect(toImmutableList());
 
         Optional<NewTableLayout> newTableLayout = metadata.getInsertLayout(session, tableHandle);
         Optional<NewTableLayout> preferredShuffleLayout = metadata.getPreferredShuffleLayoutForInsert(session, tableHandle);
@@ -359,8 +364,8 @@ public class LogicalPlanner
                 analysis,
                 plan,
                 target,
-                visibleTableColumnNames,
-                visibleTableColumns,
+                insertedTableColumnNames,
+                insertedColumns,
                 newTableLayout,
                 preferredShuffleLayout,
                 statisticsMetadata);
@@ -522,13 +527,13 @@ public class LogicalPlanner
     private RowExpression rowExpression(Expression expression, SqlPlannerContext context, Analysis analysis)
     {
         return toRowExpression(
-            expression,
-            metadata,
-            session,
-            sqlParser,
-            variableAllocator,
-            analysis,
-            context.getTranslatorContext());
+                expression,
+                metadata,
+                session,
+                sqlParser,
+                variableAllocator,
+                analysis,
+                context.getTranslatorContext());
     }
 
     private static List<ColumnMetadata> getOutputTableColumns(RelationPlan plan, Optional<List<Identifier>> columnAliases)

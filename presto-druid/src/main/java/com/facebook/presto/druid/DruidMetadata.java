@@ -160,7 +160,7 @@ public class DruidMetadata
     }
 
     @Override
-    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle, List<ColumnHandle> insertedColumns)
     {
         DruidTableHandle druidTableHandle = (DruidTableHandle) tableHandle;
         List<DruidColumnInfo> columns = druidClient.getColumnDataType(druidTableHandle.getTableName());

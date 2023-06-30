@@ -49,6 +49,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.facebook.presto.kafka.KafkaHandleResolver.convertColumnHandle;
 import static com.facebook.presto.kafka.KafkaHandleResolver.convertTableHandle;
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
@@ -266,13 +267,15 @@ public class KafkaMetadata
     }
 
     @Override
-    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle, List<ColumnHandle> insertedColumns)
     {
         // TODO: support transactional inserts
         KafkaTableHandle table = (KafkaTableHandle) tableHandle;
         List<KafkaColumnHandle> actualColumns = table.getColumns().stream()
                 .filter(col -> !col.isInternal())
                 .collect(toImmutableList());
+
+        checkArgument(insertedColumns.equals(actualColumns), "Unexpected columns!\nexpected: %s\ngot: %s", actualColumns, insertedColumns);
 
         return new KafkaTableHandle(
                 connectorId,

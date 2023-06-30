@@ -230,7 +230,7 @@ public class BlackHoleMetadata
     }
 
     @Override
-    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle, List<ColumnHandle> insertedColumns)
     {
         BlackHoleTableHandle handle = (BlackHoleTableHandle) tableHandle;
         return new BlackHoleInsertTableHandle(handle.getPageProcessingDelay());

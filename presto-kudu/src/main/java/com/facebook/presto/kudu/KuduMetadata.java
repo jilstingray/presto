@@ -273,7 +273,7 @@ public class KuduMetadata
     }
 
     @Override
-    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle connectorTableHandle)
+    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle connectorTableHandle, List<ColumnHandle> insertedColumns)
     {
         KuduTableHandle tableHandle = (KuduTableHandle) connectorTableHandle;
 
