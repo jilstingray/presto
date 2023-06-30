@@ -372,7 +372,13 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public InsertTableHandle beginInsert(Session session, TableHandle tableHandle)
+    public InsertTableHandle beginInsert(Session session, TableHandle tableHandle, List<ColumnHandle> insertedColumns)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean supportsMissingColumnsOnInsert(Session session, TableHandle tableHandle)
     {
         throw new UnsupportedOperationException();
     }

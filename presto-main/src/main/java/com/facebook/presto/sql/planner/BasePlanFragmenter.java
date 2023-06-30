@@ -512,8 +512,9 @@ public abstract class BasePlanFragmenter
                 .filter(variable -> variableToColumnMap.get(variable) != null && !(variableToColumnMap.get(variable).isNullable()))
                 .collect(Collectors.toSet());
 
+        List<ColumnHandle> columns = metadata.getColumnHandles(session, tableHandle).values().stream().collect(toImmutableList());
         SchemaTableName schemaTableName = metadata.getTableMetadata(session, tableHandle).getTable();
-        TableWriterNode.InsertReference insertReference = new TableWriterNode.InsertReference(tableHandle, schemaTableName);
+        TableWriterNode.InsertReference insertReference = new TableWriterNode.InsertReference(tableHandle, columns, schemaTableName);
 
         PartitioningScheme partitioningScheme = new PartitioningScheme(
                 Partitioning.create(partitioningHandle, partitioningVariables),

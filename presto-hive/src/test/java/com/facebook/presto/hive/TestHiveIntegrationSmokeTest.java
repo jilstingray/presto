@@ -24,6 +24,7 @@ import com.facebook.presto.metadata.InsertTableHandle;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.metadata.TableLayout;
 import com.facebook.presto.spi.CatalogSchemaTableName;
+import com.facebook.presto.spi.ColumnHandle;
 import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.ConnectorId;
 import com.facebook.presto.spi.ConnectorSession;
@@ -5560,7 +5561,8 @@ public class TestHiveIntegrationSmokeTest
                 .execute(session, transactionSession -> {
                     QualifiedObjectName objectName = new QualifiedObjectName(catalog, TPCH_SCHEMA, tableName);
                     Optional<TableHandle> handle = metadata.getMetadataResolver(transactionSession).getTableHandle(objectName);
-                    InsertTableHandle insertTableHandle = metadata.beginInsert(transactionSession, handle.get());
+                    List<ColumnHandle> columns = ImmutableList.copyOf(metadata.getColumnHandles(transactionSession, handle.get()).values());
+                    InsertTableHandle insertTableHandle = metadata.beginInsert(transactionSession, handle.get(), columns);
                     HiveInsertTableHandle hiveInsertTableHandle = (HiveInsertTableHandle) insertTableHandle.getConnectorHandle();
 
                     metadata.finishInsert(transactionSession, insertTableHandle, ImmutableList.of(), ImmutableList.of());

@@ -337,9 +337,15 @@ public abstract class DelegatingMetadataManager
     }
 
     @Override
-    public InsertTableHandle beginInsert(Session session, TableHandle tableHandle)
+    public InsertTableHandle beginInsert(Session session, TableHandle tableHandle, List<ColumnHandle> columns)
     {
-        return delegate.beginInsert(session, tableHandle);
+        return delegate.beginInsert(session, tableHandle, columns);
+    }
+
+    @Override
+    public boolean supportsMissingColumnsOnInsert(Session session, TableHandle tableHandle)
+    {
+        return delegate.supportsMetadataDelete(session, tableHandle);
     }
 
     @Override

@@ -238,7 +238,7 @@ public class MongoMetadata
     }
 
     @Override
-    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle, List<ColumnHandle> insertedColumns)
     {
         MongoTableHandle table = (MongoTableHandle) tableHandle;
         List<MongoColumnHandle> columns = mongoSession.getTable(table.getSchemaTableName()).getColumns();

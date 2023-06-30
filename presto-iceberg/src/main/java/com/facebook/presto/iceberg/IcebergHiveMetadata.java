@@ -286,7 +286,7 @@ public class IcebergHiveMetadata
     }
 
     @Override
-    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle, List<ColumnHandle> insertedColumns)
     {
         IcebergTableHandle table = (IcebergTableHandle) tableHandle;
         org.apache.iceberg.Table icebergTable = getHiveIcebergTable(metastore, hdfsEnvironment, session, table.getSchemaTableName());

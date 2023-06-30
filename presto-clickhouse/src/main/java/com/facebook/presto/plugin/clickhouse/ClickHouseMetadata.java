@@ -208,7 +208,7 @@ public class ClickHouseMetadata
     }
 
     @Override
-    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle, List<ColumnHandle> insertedColumns)
     {
         ClickHouseOutputTableHandle handle = clickHouseClient.beginInsertTable(session, getTableMetadata(session, tableHandle));
         setRollback(() -> clickHouseClient.rollbackCreateTable(ClickHouseIdentity.from(session), handle));

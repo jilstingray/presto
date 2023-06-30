@@ -258,7 +258,7 @@ public class MemoryMetadata
     }
 
     @Override
-    public synchronized MemoryInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public synchronized MemoryInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle, List<ColumnHandle> insertedColumns)
     {
         MemoryTableHandle memoryTableHandle = (MemoryTableHandle) tableHandle;
         return new MemoryInsertTableHandle(memoryTableHandle, ImmutableSet.copyOf(tableIds.values()));
