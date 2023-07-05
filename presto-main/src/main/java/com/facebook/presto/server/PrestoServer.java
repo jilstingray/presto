@@ -39,6 +39,7 @@ import com.facebook.presto.execution.scheduler.NodeSchedulerConfig;
 import com.facebook.presto.execution.warnings.WarningCollectorModule;
 import com.facebook.presto.metadata.Catalog;
 import com.facebook.presto.metadata.CatalogManager;
+import com.facebook.presto.metadata.DynamicCatalogStore;
 import com.facebook.presto.metadata.StaticCatalogStore;
 import com.facebook.presto.metadata.StaticFunctionNamespaceStore;
 import com.facebook.presto.security.AccessControlManager;
@@ -146,8 +147,16 @@ public class PrestoServer
 
             ServerConfig serverConfig = injector.getInstance(ServerConfig.class);
 
-            if (!serverConfig.isResourceManager()) {
-                injector.getInstance(StaticCatalogStore.class).loadCatalogs();
+            // hack: load catalogs dynamically if enabled
+            DynamicCatalogStore dynamicCatalogStore = injector.getInstance(DynamicCatalogStore.class);
+
+            if (dynamicCatalogStore.isDynamicEnabled()) {
+                dynamicCatalogStore.loadCatalogs();
+            }
+            else {
+                if (!serverConfig.isResourceManager()) {
+                    injector.getInstance(StaticCatalogStore.class).loadCatalogs();
+                }
             }
 
             // TODO: remove this huge hack

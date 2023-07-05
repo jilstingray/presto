@@ -91,6 +91,9 @@ import com.facebook.presto.metadata.CatalogManager;
 import com.facebook.presto.metadata.ColumnPropertyManager;
 import com.facebook.presto.metadata.ConnectorMetadataUpdaterManager;
 import com.facebook.presto.metadata.DiscoveryNodeManager;
+import com.facebook.presto.metadata.DynamicCatalogResource;
+import com.facebook.presto.metadata.DynamicCatalogStore;
+import com.facebook.presto.metadata.DynamicCatalogStoreConfig;
 import com.facebook.presto.metadata.ForNodeManager;
 import com.facebook.presto.metadata.FunctionAndTypeManager;
 import com.facebook.presto.metadata.HandleJsonModule;
@@ -593,6 +596,14 @@ public class ServerMainModule
         binder.bind(FunctionAndTypeManager.class).in(Scopes.SINGLETON);
         binder.bind(MetadataManager.class).in(Scopes.SINGLETON);
 
+        // hack: load catalogs dynamically if enabled
+        binder.bind(DynamicCatalogStore.class).in(Scopes.SINGLETON);
+        configBinder(binder).bindConfig(DynamicCatalogStoreConfig.class);
+        binder.bind(StaticFunctionNamespaceStore.class).in(Scopes.SINGLETON);
+        configBinder(binder).bindConfig(StaticFunctionNamespaceStoreConfig.class);
+        binder.bind(FunctionAndTypeManager.class).in(Scopes.SINGLETON);
+        binder.bind(MetadataManager.class).in(Scopes.SINGLETON);
+
         if (serverConfig.isCatalogServerEnabled() && serverConfig.isCoordinator()) {
             binder.bind(RemoteMetadataManager.class).in(Scopes.SINGLETON);
             binder.bind(Metadata.class).to(RemoteMetadataManager.class).in(Scopes.SINGLETON);
@@ -600,6 +611,9 @@ public class ServerMainModule
         else {
             binder.bind(Metadata.class).to(MetadataManager.class).in(Scopes.SINGLETON);
         }
+
+        // hack: bind restful ports to add/remove catalogs
+        jaxrsBinder(binder).bind(DynamicCatalogResource.class);
 
         // row expression utils
         binder.bind(DomainTranslator.class).to(RowExpressionDomainTranslator.class).in(Scopes.SINGLETON);
