@@ -16,6 +16,7 @@ package com.facebook.presto.sql.planner.planPrinter;
 import com.facebook.presto.cost.PlanCostEstimate;
 import com.facebook.presto.cost.PlanNodeStatsEstimate;
 import com.facebook.presto.spi.eventlistener.PlanOptimizerInformation;
+import com.facebook.presto.sql.planner.optimizations.OptimizerResult;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
 
@@ -56,7 +57,9 @@ public class TextRenderer
 
         if (verboseOptimizerInfo) {
             String optimizerInfo = optimizerInfoToText(plan.getPlanOptimizerInfo());
+            String optimizerResults = optimizerResultsToText(plan.getPlanOptimizerResults());
             result += optimizerInfo;
+            result += optimizerResults;
         }
         return result;
     }
@@ -227,8 +230,8 @@ public class TextRenderer
         for (int i = 0; i < estimateCount; i++) {
             PlanNodeStatsEstimate stats = node.getEstimatedStats().get(i);
             PlanCostEstimate cost = node.getEstimatedCost().get(i);
-
-            output.append(format("{rows: %s (%s), cpu: %s, memory: %s, network: %s}",
+            output.append(format("{source: %s, rows: %s (%s), cpu: %s, memory: %s, network: %s}",
+                    stats.getSourceInfo().getClass().getSimpleName(),
                     formatAsLong(stats.getOutputRowCount()),
                     formatEstimateAsDataSize(stats.getOutputSizeInBytes(plan.getPlanNodeRoot())),
                     formatDouble(cost.getCpuCost()),
@@ -297,5 +300,19 @@ public class TextRenderer
         String applicable = "Applicable optimizers: [" +
                 String.join(", ", applicableOptimizers) + "]\n";
         return triggered + applicable;
+    }
+
+    private String optimizerResultsToText(List<OptimizerResult> optimizerResults)
+    {
+        StringBuilder builder = new StringBuilder();
+
+        optimizerResults.forEach(opt -> {
+            builder.append(opt.getOptimizer() + " (before):\n");
+            builder.append(opt.getOldNode() + "\n");
+            builder.append(opt.getOptimizer() + " (after):\n");
+            builder.append(opt.getNewNode() + "\n");
+        });
+
+        return builder.toString();
     }
 }

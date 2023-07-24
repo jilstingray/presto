@@ -20,7 +20,7 @@ import com.facebook.presto.hive.metastore.Database;
 import com.facebook.presto.hive.metastore.ExtendedHiveMetastore;
 import com.facebook.presto.nativeworker.PrestoNativeQueryRunnerUtils;
 import com.facebook.presto.spark.classloader_interface.PrestoSparkNativeExecutionShuffleManager;
-import com.facebook.presto.spark.execution.NativeExecutionModule;
+import com.facebook.presto.spark.execution.nativeprocess.NativeExecutionModule;
 import com.facebook.presto.spark.execution.property.NativeExecutionConnectorConfig;
 import com.facebook.presto.spi.security.PrincipalType;
 import com.facebook.presto.testing.QueryRunner;
@@ -33,6 +33,8 @@ import org.apache.spark.shuffle.ShuffleHandle;
 import org.apache.spark.shuffle.sort.BypassMergeSortShuffleHandle;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
@@ -99,6 +101,14 @@ public class PrestoSparkNativeQueryRunnerUtils
                     "Native worker binary path is missing. " +
                             "Add -DPRESTO_SERVER=/path/to/native/process/bin to your JVM arguments.");
             builder.put("native-execution-executable-path", path);
+        }
+
+        try {
+            builder.put("native-execution-broadcast-base-path",
+                    Files.createTempDirectory("native_broadcast").toAbsolutePath().toString());
+        }
+        catch (IOException e) {
+            throw new UncheckedIOException("Error creating temporary directory for broadcast", e);
         }
 
         return builder.build();

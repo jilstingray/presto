@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.nativeworker;
 
+import com.facebook.presto.Session;
 import com.facebook.presto.testing.QueryRunner;
 import com.facebook.presto.tests.AbstractTestQueryFramework;
 import org.testng.annotations.Test;
@@ -68,7 +69,7 @@ public abstract class AbstractTestNativeAggregations
         assertQuery("SELECT array_agg(nationkey ORDER BY name) FROM nation");
         assertQuery("SELECT orderkey, array_agg(quantity ORDER BY linenumber DESC) FROM lineitem GROUP BY 1");
 
-        assertQuery("SELECT map_keys(map_union(quantity_by_linenumber)) FROM orders_ex");
+        assertQuery("SELECT array_sort(map_keys(map_union(quantity_by_linenumber))) FROM orders_ex");
 
         assertQuery("SELECT orderkey, count_if(linenumber % 2 > 0) FROM lineitem GROUP BY 1");
         assertQuery("SELECT orderkey, bool_and(linenumber % 2 = 1) FROM lineitem GROUP BY 1");
@@ -194,13 +195,22 @@ public abstract class AbstractTestNativeAggregations
     @Test
     public void testMinMaxBy()
     {
-        // TODO(spershin): Need to add use cases with non-numeric types when implemented.
         // We use filters to make queries deterministic.
         assertQuery("SELECT max_by(partkey, orderkey), max_by(quantity, orderkey), max_by(tax_as_real, orderkey) FROM lineitem where shipmode='MAIL'");
         assertQuery("SELECT min_by(partkey, orderkey), min_by(quantity, orderkey), min_by(tax_as_real, orderkey) FROM lineitem where shipmode='MAIL'");
 
         assertQuery("SELECT max_by(orderkey, extendedprice), max_by(orderkey, cast(extendedprice as REAL)) FROM lineitem");
         assertQuery("SELECT min_by(orderkey, extendedprice), min_by(orderkey, cast(extendedprice as REAL)) FROM lineitem where shipmode='MAIL'");
+
+        // 3 argument variant of max_by, min_by
+        assertQuery("SELECT max_by(orderkey, linenumber, 5), min_by(orderkey, linenumber, 5) FROM lineitem GROUP BY orderkey");
+
+        // Non-numeric arguments
+        assertQuery("SELECT max_by(row(orderkey, custkey), orderkey, 5), min_by(row(orderkey, custkey), orderkey, 5) FROM orders");
+        assertQuery("SELECT max_by(row(orderkey, linenumber), linenumber, 5), min_by(row(orderkey, linenumber), linenumber, 5) FROM lineitem GROUP BY orderkey");
+        assertQuery("SELECT orderkey, MAX_BY(v, c, 5), MIN_BY(v, c, 5) FROM " +
+                "(SELECT orderkey, 'This is a long line ' || CAST(orderkey AS VARCHAR) AS v, 'This is also a really long line ' || CAST(linenumber AS VARCHAR) AS c FROM lineitem) " +
+                "GROUP BY 1");
     }
 
     @Test
@@ -284,6 +294,18 @@ public abstract class AbstractTestNativeAggregations
     {
         assertQuery("SELECT count(distinct orderkey), count(distinct linenumber) FROM lineitem");
         assertQuery("SELECT orderkey, count(distinct comment), sum(distinct linenumber) FROM lineitem GROUP BY 1");
+    }
+
+    @Test
+    public void testDistinct()
+    {
+        Session session = Session.builder(getSession())
+                .setSystemProperty("use_mark_distinct", "falze")
+                .build();
+        assertQuery(session, "SELECT count(distinct orderkey), count(distinct linenumber) FROM lineitem");
+        assertQuery(session, "SELECT count(distinct orderkey), sum(distinct linenumber), array_sort(array_agg(distinct linenumber)) FROM lineitem");
+        assertQueryFails(session, "SELECT count(distinct orderkey), array_agg(distinct linenumber ORDER BY linenumber) FROM lineitem",
+                ".*Aggregations over sorted unique values are not supported yet");
     }
 
     private void assertQueryResultCount(String sql, int expectedResultCount)

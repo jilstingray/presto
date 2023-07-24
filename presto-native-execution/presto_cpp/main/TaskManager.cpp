@@ -50,12 +50,18 @@ static void maybeSetupTaskSpillDirectory(
     const core::PlanFragment& planFragment,
     exec::Task& execTask) {
   const auto baseSpillPath = SystemConfig::instance()->spillerSpillPath();
+  const auto includeNodeInSpillPath =
+      SystemConfig::instance()->includeNodeInSpillPath();
+  auto nodeConfig = NodeConfig::instance();
   if (baseSpillPath.hasValue() &&
       planFragment.canSpill(execTask.queryCtx()->queryConfig())) {
     const auto taskSpillDirPath = TaskManager::buildTaskSpillDirectoryPath(
         baseSpillPath.value(),
+        nodeConfig->nodeIp(),
+        nodeConfig->nodeId(),
         execTask.queryCtx()->queryId(),
-        execTask.taskId());
+        execTask.taskId(),
+        includeNodeInSpillPath);
     execTask.setSpillDirectory(taskSpillDirPath);
     // Create folder for the task spilling.
     auto fileSystem =
@@ -204,8 +210,11 @@ std::unique_ptr<TaskInfo> TaskManager::createOrUpdateErrorTask(
 
 /*static*/ std::string TaskManager::buildTaskSpillDirectoryPath(
     const std::string& baseSpillPath,
+    const std::string& nodeIp,
+    const std::string& nodeId,
     const std::string& queryId,
-    const protocol::TaskId& taskId) {
+    const protocol::TaskId& taskId,
+    bool includeNodeInSpillPath) {
   // Generate 'YYYY-MM-DD' from the query ID, which starts with 'YYYYMMDD'.
   // In case query id is malformed (should not be the case in production) we
   // fall back to the predefined date.
@@ -217,14 +226,15 @@ std::unique_ptr<TaskInfo> TaskManager::createOrUpdateErrorTask(
             queryId.substr(6, 2))
       : "1970-01-01";
 
-  std::stringstream ss;
-  ss << baseSpillPath << "/";
-  ss << dateString;
-  ss << "/";
-  // TODO(spershin): We will like need to use identity (from config?) in the
-  // long run. Use 'presto_native' for now.
-  ss << "presto_native/" << queryId << "/" << taskId << "/";
-  return ss.str();
+  std::string path;
+  folly::toAppend(fmt::format("{}/", baseSpillPath), &path);
+  if (includeNodeInSpillPath) {
+    folly::toAppend(fmt::format("{}_{}/", nodeIp, nodeId), &path);
+  }
+  folly::toAppend(
+      fmt::format("{}/presto_native/{}/{}/", dateString, queryId, taskId),
+      &path);
+  return path;
 }
 
 void TaskManager::getDataForResultRequests(
@@ -395,8 +405,8 @@ std::unique_ptr<TaskInfo> TaskManager::createOrUpdateTask(
 
   for (const auto& source : sources) {
     // Add all splits from the source to the task.
-    LOG(INFO) << "Adding " << source.splits.size() << " splits to " << taskId
-              << " for node " << source.planNodeId;
+    VLOG(1) << "Adding " << source.splits.size() << " splits to " << taskId
+            << " for node " << source.planNodeId;
     // Keep track of the max sequence for this batch of splits.
     long maxSplitSequenceId{-1};
     for (const auto& protocolSplit : source.splits) {
@@ -625,7 +635,7 @@ size_t TaskManager::cleanOldTasks() {
       }
     }
     LOG(INFO) << "cleanOldTasks: Cleaned " << taskIdsToClean.size()
-              << " old task(s) in " << elapsedMs << "ms";
+              << " old task(s) in " << elapsedMs << " ms";
   } else if (elapsedMs > 1000) {
     // If we took more than 1 second to run this, something might be wrong.
     LOG(INFO) << "cleanOldTasks: Didn't clean any old task(s). Took "
@@ -958,6 +968,23 @@ DriverCountStats TaskManager::getDriverCountStats() const {
   driverCountStats.numBlockedDrivers =
       velox::exec::BlockingState::numBlockedDrivers();
   return driverCountStats;
+}
+
+int32_t TaskManager::yieldTasks(
+    int32_t numTargetThreadsToYield,
+    int32_t timeSliceMicros) {
+  const auto taskMap = taskMap_.rlock();
+  int32_t numYields = 0;
+  uint64_t now = getCurrentTimeMicro();
+  for (const auto& pair : *taskMap) {
+    if (pair.second->task != nullptr) {
+      numYields += pair.second->task->yieldIfDue(now - timeSliceMicros);
+      if (numYields >= numTargetThreadsToYield) {
+        return numYields;
+      }
+    }
+  }
+  return numYields;
 }
 
 std::array<size_t, 5> TaskManager::getTaskNumbers(size_t& numTasks) const {

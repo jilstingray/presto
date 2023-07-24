@@ -67,7 +67,18 @@ std::string mapScalarFunction(const std::string& name) {
 }
 
 std::string mapAggregateOrWindowFunction(const std::string& name) {
-  return boost::to_lower_copy(name);
+  static const std::unordered_map<std::string, std::string> kFunctionNames = {
+      {"presto.default.$internal$max_data_size_for_stats",
+       "presto.default.max_data_size_for_stats"},
+      {"presto.default.$internal$sum_data_size_for_stats",
+       "presto.default.sum_data_size_for_stats"},
+  };
+  std::string lowerCaseName = boost::to_lower_copy(name);
+  auto it = kFunctionNames.find(name);
+  if (it != kFunctionNames.end()) {
+    return it->second;
+  }
+  return lowerCaseName;
 }
 
 std::string getFunctionName(const protocol::Signature& signature) {
@@ -117,8 +128,6 @@ velox::variant VeloxExprConverter::getConstantValue(
     case TypeKind::TIMESTAMP:
       return valueVector->as<velox::SimpleVector<velox::Timestamp>>()->valueAt(
           0);
-    case TypeKind::DATE:
-      return valueVector->as<velox::SimpleVector<velox::Date>>()->valueAt(0);
     case TypeKind::BOOLEAN:
       return valueVector->as<velox::SimpleVector<bool>>()->valueAt(0);
     case TypeKind::DOUBLE:
@@ -608,6 +617,14 @@ TypedExprPtr convertDereferenceExpr(
 
   VELOX_USER_CHECK_LT(childIndex, inputType.size());
   auto childName = inputType.names()[childIndex];
+
+  VELOX_USER_CHECK_EQ(
+      childIndex,
+      inputType.getChildIdx(childName),
+      "Cannot map field index to name in dereference expression: {}. "
+      "Input struct may have duplicate or empty field names: {}.",
+      childIndex,
+      inputType.toString())
 
   return std::make_shared<FieldAccessTypedExpr>(returnType, input, childName);
 }

@@ -100,22 +100,22 @@ class BroadcastTest : public exec::test::OperatorTestBase {
           fmt::format(kBroadcastFileInfoFormat, broadcastFilePath));
     }
 
-    bool noMoreSplits = false;
+    uint8_t splitIndex = 0;
     // Read back result using BroadcastExchangeSource.
     return readCursor(broadcastReadParams, [&](auto* task) {
-      if (noMoreSplits) {
+      if (splitIndex >= broadcastFilePaths.size()) {
+        task->noMoreSplits("0");
         return;
       }
 
       auto split = exec::Split(
           std::make_shared<exec::RemoteConnectorSplit>(fmt::format(
-              "batch://task?broadcastInfo={{\"basePath\": \"{}\", \"fileInfos\":[{}]}}",
-              basePath,
-              boost::algorithm::join(fileInfos, ","))),
+              "batch://task?broadcastInfo={}",
+              fmt::format(
+                  kBroadcastFileInfoFormat, broadcastFilePaths[splitIndex]))),
           -1);
       task->addSplit("0", std::move(split));
-      task->noMoreSplits("0");
-      noMoreSplits = true;
+      ++splitIndex;
     });
   }
 
@@ -186,7 +186,7 @@ TEST_F(BroadcastTest, endToEnd) {
   });
   runBroadcastTest({data});
 
-  makeRowVector({
+  data = makeRowVector({
       makeFlatVector<double>({1.0, 2.0, 3.0}),
       makeArrayVector<int32_t>({
           {1, 2},
@@ -197,6 +197,26 @@ TEST_F(BroadcastTest, endToEnd) {
           {{{1, 10}, {2, 20}}, {{3, 30}, {4, 40}, {5, 50}}, {}}),
   });
   runBroadcastTest({data});
+}
+
+TEST_F(BroadcastTest, endToEndWithNoRows) {
+  std::vector<RowVectorPtr> data = {makeRowVector(
+      {makeFlatVector<double>({}), makeArrayVector<int32_t>({})})};
+  auto tempDirectoryPath = exec::test::TempDirectoryPath::create();
+  std::vector<std::string> broadcastFilePaths;
+
+  // Execute write.
+  auto results = executeBroadcastWrite({data}, tempDirectoryPath->path);
+
+  // Assert no file path returned.
+  ASSERT_EQ(broadcastFilePaths.size(), 0);
+
+  auto fileSystem =
+      velox::filesystems::getFileSystem(tempDirectoryPath->path, nullptr);
+  auto files = fileSystem->list(tempDirectoryPath->path);
+
+  // Assert no file was generated in broadcast directory path.
+  ASSERT_EQ(files.size(), 0);
 }
 
 TEST_F(BroadcastTest, endToEndWithMultipleWriteNodes) {

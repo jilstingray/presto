@@ -14,6 +14,8 @@
 #pragma once
 
 #include <folly/Uri.h>
+#include <folly/executors/IOThreadPoolExecutor.h>
+#include <folly/futures/Retrying.h>
 
 #include "presto_cpp/main/common/Configs.h"
 #include "presto_cpp/main/http/HttpClient.h"
@@ -21,23 +23,64 @@
 #include "velox/exec/Exchange.h"
 
 namespace facebook::presto {
+
 class PrestoExchangeSource : public velox::exec::ExchangeSource {
  public:
+  class RetryState {
+   public:
+    RetryState(int64_t maxWaitMs = 1000)
+        : maxWaitMs_(maxWaitMs), startMs_(velox::getCurrentTimeMs()) {}
+
+    // Returns the delay in millis to wait before next try. This is an
+    // exponential backoff delay with jitter. The first call to this always
+    // returns 0.
+    int64_t nextDelayMs() {
+      if (++numTries_ == 1) {
+        return 0;
+      }
+      auto rng = folly::ThreadLocalPRNG();
+      return folly::futures::detail::retryingJitteredExponentialBackoffDur(
+                 numTries_ - 1,
+                 std::chrono::milliseconds(kMinBackoffMs),
+                 std::chrono::milliseconds(kMaxBackoffMs),
+                 kJitterParam,
+                 rng)
+          .count();
+    }
+
+    // Returns whether we have exhausted all retries. We only retry if we spent
+    // less than maxWaitMs_ time after we first started.
+    bool isExhausted() const {
+      return velox::getCurrentTimeMs() - startMs_ > maxWaitMs_;
+    }
+
+   private:
+    int64_t maxWaitMs_;
+    int64_t startMs_;
+    size_t numTries_{0};
+
+    static constexpr int64_t kMinBackoffMs = 100;
+    static constexpr int64_t kMaxBackoffMs = 10000;
+    static constexpr double kJitterParam = 0.1;
+  };
+
   PrestoExchangeSource(
       const folly::Uri& baseUri,
       int destination,
       std::shared_ptr<velox::exec::ExchangeQueue> queue,
       velox::memory::MemoryPool* pool,
+      const std::shared_ptr<folly::IOThreadPoolExecutor>& executor,
       const std::string& clientCertAndKeyPath_ = "",
       const std::string& ciphers_ = "");
 
   bool shouldRequestLocked() override;
 
-  static std::unique_ptr<ExchangeSource> createExchangeSource(
+  static std::unique_ptr<ExchangeSource> create(
       const std::string& url,
       int destination,
       std::shared_ptr<velox::exec::ExchangeQueue> queue,
-      velox::memory::MemoryPool* pool);
+      velox::memory::MemoryPool* pool,
+      std::shared_ptr<folly::IOThreadPoolExecutor> executor);
 
   void close() override;
 
@@ -70,7 +113,7 @@ class PrestoExchangeSource : public velox::exec::ExchangeSource {
  private:
   void request() override;
 
-  void doRequest();
+  void doRequest(int64_t delayMs);
 
   void processDataResponse(std::unique_ptr<http::HttpResponse> response);
 
@@ -108,8 +151,10 @@ class PrestoExchangeSource : public velox::exec::ExchangeSource {
   const uint16_t port_;
   const std::string clientCertAndKeyPath_;
   const std::string ciphers_;
+  const std::shared_ptr<folly::IOThreadPoolExecutor> exchangeExecutor_;
 
   std::shared_ptr<http::HttpClient> httpClient_;
+  RetryState retryState_;
   int failedAttempts_;
   // The number of pages received from this presto exchange source.
   uint64_t numPages_{0};

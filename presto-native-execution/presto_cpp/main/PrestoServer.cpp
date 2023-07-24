@@ -21,17 +21,17 @@
 #include "presto_cpp/main/Announcer.h"
 #include "presto_cpp/main/PeriodicTaskManager.h"
 #include "presto_cpp/main/PrestoExchangeSource.h"
-#include "presto_cpp/main/PrestoServerOperations.h"
 #include "presto_cpp/main/SignalHandler.h"
 #include "presto_cpp/main/TaskResource.h"
 #include "presto_cpp/main/common/ConfigReader.h"
 #include "presto_cpp/main/common/Configs.h"
 #include "presto_cpp/main/common/Counters.h"
 #include "presto_cpp/main/common/Utils.h"
-#include "presto_cpp/main/connectors/hive/storage_adapters/FileSystems.h"
 #include "presto_cpp/main/http/HttpServer.h"
 #include "presto_cpp/main/http/filters/AccessLogFilter.h"
 #include "presto_cpp/main/http/filters/StatsFilter.h"
+#include "presto_cpp/main/operators/BroadcastExchangeSource.h"
+#include "presto_cpp/main/operators/BroadcastWrite.h"
 #include "presto_cpp/main/operators/LocalPersistentShuffle.h"
 #include "presto_cpp/main/operators/PartitionAndSerialize.h"
 #include "presto_cpp/main/operators/ShuffleInterface.h"
@@ -48,10 +48,6 @@
 #include "velox/connectors/Connector.h"
 #include "velox/connectors/hive/HiveConnector.h"
 #include "velox/core/Config.h"
-#include "velox/dwio/dwrf/reader/DwrfReader.h"
-#include "velox/dwio/dwrf/writer/Writer.h"
-#include "velox/dwio/parquet/RegisterParquetReader.h"
-#include "velox/dwio/parquet/RegisterParquetWriter.h"
 #include "velox/exec/PartitionedOutputBufferManager.h"
 #include "velox/functions/prestosql/aggregates/RegisterAggregateFunctions.h"
 #include "velox/functions/prestosql/registration/RegistrationFunctions.h"
@@ -79,23 +75,6 @@ protocol::NodeState convertNodeState(presto::NodeState nodeState) {
       return protocol::NodeState::SHUTTING_DOWN;
   }
   return protocol::NodeState::ACTIVE; // For gcc build.
-}
-
-std::string getLocalIp() {
-  using boost::asio::ip::tcp;
-  boost::asio::io_service io_service;
-  tcp::resolver resolver(io_service);
-  tcp::resolver::query query(boost::asio::ip::host_name(), kHttp);
-  tcp::resolver::iterator it = resolver.resolve(query);
-  while (it != tcp::resolver::iterator()) {
-    boost::asio::ip::address addr = (it++)->endpoint().address();
-    // simple check to see if the address is not ::
-    if (addr.to_string().length() > 4) {
-      return fmt::format("{}", addr.to_string());
-    }
-  }
-  VELOX_FAIL(
-      "Could not infer Node IP. Please specify node.ip in the node.properties file.");
 }
 
 void enableChecksum() {
@@ -175,7 +154,7 @@ void PrestoServer::run() {
     httpExecThreads = systemConfig->httpExecThreads();
     environment_ = nodeConfig->nodeEnvironment();
     nodeId_ = nodeConfig->nodeId();
-    address_ = nodeConfig->nodeIp(getLocalIp);
+    address_ = nodeConfig->nodeIp(std::bind(&PrestoServer::getLocalIp, this));
     // Add [] to an ipv6 address.
     if (address_.find(':') != std::string::npos && address_.front() != '[') {
       address_ = fmt::format("[{}]", address_);
@@ -190,16 +169,10 @@ void PrestoServer::run() {
   registerStatsCounters();
   registerFileSinks();
   registerFileSystems();
-  registerOptionalHiveStorageAdapters();
   registerShuffleInterfaceFactories();
   registerCustomOperators();
   protocol::registerHiveConnectors();
   protocol::registerTpchConnector();
-
-  auto executor = std::make_shared<folly::IOThreadPoolExecutor>(
-      systemConfig->numIoThreads(),
-      std::make_shared<folly::NamedThreadFactory>("PrestoWorkerNetwork"));
-  folly::setUnsafeMutableGlobalIOExecutor(executor);
 
   initializeVeloxMemory();
 
@@ -294,31 +267,34 @@ void PrestoServer::run() {
             .sendWithEOM();
       });
 
-  // The endpoint used by operation in production.
-  httpServer_->registerGet(
-      "/v1/operation/.*",
-      [](proxygen::HTTPMessage* message,
-         const std::vector<std::unique_ptr<folly::IOBuf>>& /*body*/,
-         proxygen::ResponseHandler* downstream) {
-        PrestoServerOperations::runOperation(message, downstream);
-      });
-
   registerFunctions();
   registerRemoteFunctions();
   registerVectorSerdes();
   registerPrestoPlanNodeSerDe();
 
+  exchangeExecutor_ = std::make_shared<folly::IOThreadPoolExecutor>(
+      systemConfig->numIoThreads(),
+      std::make_shared<folly::NamedThreadFactory>("PrestoWorkerNetwork"));
+
+  PRESTO_STARTUP_LOG(INFO) << "Exchange executor has "
+                           << exchangeExecutor_->numThreads() << " threads.";
+
   facebook::velox::exec::ExchangeSource::registerFactory(
-      PrestoExchangeSource::createExchangeSource);
+      [this](
+          const std::string& taskId,
+          int destination,
+          std::shared_ptr<velox::exec::ExchangeQueue> queue,
+          memory::MemoryPool* pool) {
+        return PrestoExchangeSource::create(
+            taskId, destination, queue, pool, exchangeExecutor_);
+      });
+
   facebook::velox::exec::ExchangeSource::registerFactory(
       operators::UnsafeRowExchangeSource::createExchangeSource);
 
-  velox::dwrf::registerDwrfReaderFactory();
-  velox::dwrf::registerDwrfWriterFactory();
-
-  velox::parquet::registerParquetReaderFactory(
-      velox::parquet::ParquetReaderType::NATIVE);
-  velox::parquet::registerParquetWriterFactory();
+  // Batch broadcast exchange source.
+  facebook::velox::exec::ExchangeSource::registerFactory(
+      operators::BroadcastExchangeSource::createExchangeSource);
 
   pool_ = velox::memory::addDefaultLeafMemoryPool();
   taskManager_ = std::make_unique<TaskManager>();
@@ -349,6 +325,18 @@ void PrestoServer::run() {
       exec::registerExprSetListener(listener);
     }
   }
+  prestoServerOperations_ =
+      std::make_unique<PrestoServerOperations>(taskManager_.get());
+
+  // The endpoint used by operation in production.
+  httpServer_->registerGet(
+      "/v1/operation/.*",
+      [this](
+          proxygen::HTTPMessage* message,
+          const std::vector<std::unique_ptr<folly::IOBuf>>& /*body*/,
+          proxygen::ResponseHandler* downstream) {
+        prestoServerOperations_->runOperation(message, downstream);
+      });
 
   PRESTO_STARTUP_LOG(INFO) << "Driver CPU executor has "
                            << driverCPUExecutor()->numThreads() << " threads.";
@@ -378,10 +366,7 @@ void PrestoServer::run() {
       memoryAllocator,
       dynamic_cast<const velox::cache::AsyncDataCache* const>(memoryAllocator),
       velox::connector::getAllConnectors());
-  periodicTaskManager_->addTask(
-      [server = this]() { server->populateMemAndCPUInfo(); },
-      1'000'000, // 1 second
-      "populate_mem_cpu_info");
+  addServerPeriodicTasks();
   addAdditionalPeriodicTasks();
   periodicTaskManager_->start();
 
@@ -409,7 +394,7 @@ void PrestoServer::run() {
 
   auto cpuExecutor = driverCPUExecutor();
   PRESTO_SHUTDOWN_LOG(INFO)
-      << "Joining Driver CPU Executor '" << cpuExecutor->getName()
+      << "Joining driver CPU Executor '" << cpuExecutor->getName()
       << "': threads: " << cpuExecutor->numActiveThreads() << "/"
       << cpuExecutor->numThreads()
       << ", task queue: " << cpuExecutor->getTaskQueueSize();
@@ -417,11 +402,17 @@ void PrestoServer::run() {
 
   if (connectorIoExecutor_) {
     PRESTO_SHUTDOWN_LOG(INFO)
-        << "Joining IO Executor '" << connectorIoExecutor_->getName()
+        << "Joining connector IO Executor '" << connectorIoExecutor_->getName()
         << "': threads: " << connectorIoExecutor_->numActiveThreads() << "/"
         << connectorIoExecutor_->numThreads();
     connectorIoExecutor_->join();
   }
+
+  PRESTO_SHUTDOWN_LOG(INFO)
+      << "Joining exchange Executor '" << exchangeExecutor_->getName()
+      << "': threads: " << exchangeExecutor_->numActiveThreads() << "/"
+      << exchangeExecutor_->numThreads();
+  exchangeExecutor_->join();
 
   PRESTO_SHUTDOWN_LOG(INFO) << "Done joining our executors.";
 
@@ -445,11 +436,26 @@ void PrestoServer::run() {
   }
 }
 
+void PrestoServer::yieldTasks() {
+  const auto timeslice = SystemConfig::instance()->taskRunTimeSliceMicros();
+  if (timeslice <= 0) {
+    return;
+  }
+  static std::atomic<int32_t> numYields = 0;
+  const auto numQueued = driverCPUExecutor()->getTaskQueueSize();
+  if (numQueued > 0) {
+    numYields += taskManager_->yieldTasks(numQueued, timeslice);
+  }
+  if (numYields > 100'000) {
+    LOG(INFO) << "Yielded " << numYields << " more threads.";
+    numYields = 0;
+  }
+}
+
 void PrestoServer::initializeVeloxMemory() {
   auto nodeConfig = NodeConfig::instance();
   auto systemConfig = SystemConfig::instance();
-  uint64_t memoryGb = nodeConfig->nodeMemoryGb(
-      [&]() { return systemConfig->systemMemoryGb(); });
+  uint64_t memoryGb = systemConfig->systemMemoryGb();
   PRESTO_STARTUP_LOG(INFO) << "Starting with node memory " << memoryGb << "GB";
 
   const int64_t memoryBytes = memoryGb << 30;
@@ -498,25 +504,24 @@ void PrestoServer::initializeVeloxMemory() {
 
   memory::MemoryAllocator::setDefaultInstance(allocator_.get());
   // Set up velox memory manager.
-  memory::MemoryManager::Options options;
+  memory::MemoryManagerOptions options;
   options.capacity = memoryBytes;
   options.checkUsageLeak = systemConfig->enableMemoryLeakCheck();
   if (systemConfig->enableMemoryArbitration()) {
     auto& arbitratorCfg = options.arbitratorConfig;
     arbitratorCfg.kind = memory::MemoryArbitrator::Kind::kShared;
-    // TODO: remove this option by making arbitration failure retry a default
-    // behavior.
-    arbitratorCfg.retryArbitrationFailure = true;
     arbitratorCfg.capacity =
         memoryBytes * 100 / systemConfig->reservedMemoryPoolCapacityPct();
     arbitratorCfg.initMemoryPoolCapacity =
-        systemConfig->initMemoryPoolCapacity();
+        systemConfig->memoryPoolInitCapacity();
     arbitratorCfg.minMemoryPoolCapacityTransferSize =
-        systemConfig->minMemoryPoolTransferCapacity();
+        systemConfig->memoryPoolTransferCapacity();
   }
   const auto& manager = memory::MemoryManager::getInstance(options, true);
   PRESTO_STARTUP_LOG(INFO) << "Memory manager has been setup: "
                            << manager.toString();
+  PRESTO_STARTUP_LOG(INFO) << "Spilling root directory: "
+                           << systemConfig->spillerSpillPath().value_or("NULL");
 }
 
 void PrestoServer::stop() {
@@ -553,7 +558,18 @@ void PrestoServer::initializeCoordinatorDiscoverer() {
   }
 }
 
-void PrestoServer::addAdditionalPeriodicTasks() {}
+void PrestoServer::addServerPeriodicTasks() {
+  periodicTaskManager_->addTask(
+      [server = this]() { server->populateMemAndCPUInfo(); },
+      1'000'000, // 1 second
+      "populate_mem_cpu_info");
+
+  const auto timeslice = SystemConfig::instance()->taskRunTimeSliceMicros();
+  if (timeslice > 0) {
+    periodicTaskManager_->addTask(
+        [server = this]() { server->yieldTasks(); }, timeslice, "yield_tasks");
+  }
+}
 
 std::shared_ptr<velox::exec::TaskListener> PrestoServer::getTaskListener() {
   return nullptr;
@@ -599,6 +615,10 @@ std::vector<std::string> PrestoServer::registerConnectors(
   if (numConnectorIoThreads) {
     connectorIoExecutor_ =
         std::make_unique<folly::IOThreadPoolExecutor>(numConnectorIoThreads);
+
+    PRESTO_STARTUP_LOG(INFO)
+        << "Connector IO executor has " << connectorIoExecutor_->numThreads()
+        << " threads.";
   }
   std::vector<std::string> catalogNames;
 
@@ -658,6 +678,12 @@ void PrestoServer::registerCustomOperators() {
       std::make_unique<facebook::presto::operators::ShuffleWriteTranslator>());
   facebook::velox::exec::Operator::registerOperator(
       std::make_unique<operators::ShuffleReadTranslator>());
+
+  // Todo - Split Presto & Presto-on-Spark server into different classes
+  // which will allow server specific operator registration.
+  facebook::velox::exec::Operator::registerOperator(
+      std::make_unique<
+          facebook::presto::operators::BroadcastWriteTranslator>());
 }
 
 void PrestoServer::registerFunctions() {
@@ -667,7 +693,7 @@ void PrestoServer::registerFunctions() {
       kPrestoDefaultPrefix);
   velox::window::prestosql::registerAllWindowFunctions(kPrestoDefaultPrefix);
   if (SystemConfig::instance()->registerTestFunctions()) {
-    velox::functions::prestosql::registerComparisonFunctions(
+    velox::functions::prestosql::registerAllScalarFunctions(
         "json.test_schema.");
     velox::aggregate::prestosql::registerAllAggregateFunctions(
         "json.test_schema.");
@@ -689,6 +715,23 @@ void PrestoServer::registerFileSystems() {
 void PrestoServer::registerStatsCounters() {
   registerPrestoCppCounters();
   registerVeloxCounters();
+}
+
+std::string PrestoServer::getLocalIp() const {
+  using boost::asio::ip::tcp;
+  boost::asio::io_service io_service;
+  tcp::resolver resolver(io_service);
+  tcp::resolver::query query(boost::asio::ip::host_name(), kHttp);
+  tcp::resolver::iterator it = resolver.resolve(query);
+  while (it != tcp::resolver::iterator()) {
+    boost::asio::ip::address addr = (it++)->endpoint().address();
+    // simple check to see if the address is not ::
+    if (addr.to_string().length() > 4) {
+      return fmt::format("{}", addr.to_string());
+    }
+  }
+  VELOX_FAIL(
+      "Could not infer Node IP. Please specify node.ip in the node.properties file.");
 }
 
 void PrestoServer::populateMemAndCPUInfo() {

@@ -13,7 +13,6 @@
  */
 
 #include <re2/re2.h>
-#include <unordered_set>
 
 #include "presto_cpp/main/common/ConfigReader.h"
 #include "presto_cpp/main/common/Configs.h"
@@ -111,6 +110,32 @@ uint64_t toCapacity(const std::string& from, CapacityUnit to) {
        toBytesPerCapacityUnit(to));
 }
 
+std::chrono::duration<double> toDuration(const std::string& str) {
+  static const RE2 kPattern(R"(^\s*(\d+(?:\.\d+)?)\s*([a-zA-Z]+)\s*)");
+
+  double value;
+  std::string unit;
+  if (!RE2::FullMatch(str, kPattern, &value, &unit)) {
+    VELOX_USER_FAIL("Invalid duration {}", str);
+  }
+  if (unit == "ns") {
+    return std::chrono::duration<double, std::nano>(value);
+  } else if (unit == "us") {
+    return std::chrono::duration<double, std::micro>(value);
+  } else if (unit == "ms") {
+    return std::chrono::duration<double, std::milli>(value);
+  } else if (unit == "s") {
+    return std::chrono::duration<double>(value);
+  } else if (unit == "m") {
+    return std::chrono::duration<double, std::ratio<60>>(value);
+  } else if (unit == "h") {
+    return std::chrono::duration<double, std::ratio<60 * 60>>(value);
+  } else if (unit == "d") {
+    return std::chrono::duration<double, std::ratio<60 * 60 * 24>>(value);
+  }
+  VELOX_USER_FAIL("Invalid duration {}", str);
+}
+
 } // namespace
 
 ConfigBase::ConfigBase()
@@ -193,12 +218,6 @@ void ConfigBase::checkRegisteredProperties(
   }
 }
 
-static constexpr std::string_view kAnnouncementMinFrequencyMs{
-    "announcement-min-frequency-ms"};
-
-static constexpr std::string_view kAnnouncementMaxFrequencyMs{
-    "announcement-max-frequency-ms"};
-
 SystemConfig::SystemConfig() {
   registeredProps_ =
       std::unordered_map<std::string, folly::Optional<std::string>>{
@@ -250,6 +269,10 @@ SystemConfig::SystemConfig() {
           NUM_PROP(kLogNumZombieTasks, 20),
           NUM_PROP(kAnnouncementMinFrequencyMs, 25'000), // 25s
           NUM_PROP(kAnnouncementMaxFrequencyMs, 30'000), // 35s
+          STR_PROP(kExchangeMaxErrorDuration, "30s"),
+          STR_PROP(kExchangeRequestTimeout, "10s"),
+          NUM_PROP(kTaskRunTimeSliceMicros, 50'000),
+          BOOL_PROP(kIncludeNodeInSpillPath, false),
       };
 }
 
@@ -409,16 +432,16 @@ bool SystemConfig::enableMemoryArbitration() const {
   return optionalProperty<bool>(kEnableMemoryArbitration).value_or(false);
 }
 
-uint64_t SystemConfig::initMemoryPoolCapacity() const {
-  static constexpr uint64_t kInitMemoryPoolCapacityDefault = 128 << 20;
-  return optionalProperty<uint64_t>(kInitMemoryPoolCapacity)
-      .value_or(kInitMemoryPoolCapacityDefault);
+uint64_t SystemConfig::memoryPoolInitCapacity() const {
+  static constexpr uint64_t kMemoryPoolInitCapacityDefault = 128 << 20;
+  return optionalProperty<uint64_t>(kMemoryPoolInitCapacity)
+      .value_or(kMemoryPoolInitCapacityDefault);
 }
 
-uint64_t SystemConfig::minMemoryPoolTransferCapacity() const {
-  static constexpr uint64_t kMinMemoryPoolTransferCapacityDefault = 32 << 20;
-  return optionalProperty<uint64_t>(kMinMemoryPoolTransferCapacity)
-      .value_or(kMinMemoryPoolTransferCapacityDefault);
+uint64_t SystemConfig::memoryPoolTransferCapacity() const {
+  static constexpr uint64_t kMemoryPoolTransferCapacityDefault = 32 << 20;
+  return optionalProperty<uint64_t>(kMemoryPoolTransferCapacity)
+      .value_or(kMemoryPoolTransferCapacityDefault);
 }
 
 uint32_t SystemConfig::reservedMemoryPoolCapacityPct() const {
@@ -470,6 +493,22 @@ uint64_t SystemConfig::announcementMinFrequencyMs() const {
 
 uint64_t SystemConfig::announcementMaxFrequencyMs() const {
   return optionalProperty<uint64_t>(kAnnouncementMaxFrequencyMs).value();
+}
+
+std::chrono::duration<double> SystemConfig::exchangeMaxErrorDuration() const {
+  return toDuration(optionalProperty(kExchangeMaxErrorDuration).value());
+}
+
+std::chrono::duration<double> SystemConfig::exchangeRequestTimeout() const {
+  return toDuration(optionalProperty(kExchangeRequestTimeout).value());
+}
+
+int32_t SystemConfig::taskRunTimeSliceMicros() const {
+  return optionalProperty<int32_t>(kTaskRunTimeSliceMicros).value();
+}
+
+bool SystemConfig::includeNodeInSpillPath() const {
+  return optionalProperty<bool>(kIncludeNodeInSpillPath).value();
 }
 
 NodeConfig::NodeConfig() {
