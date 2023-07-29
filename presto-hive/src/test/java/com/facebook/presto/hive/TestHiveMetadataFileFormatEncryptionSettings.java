@@ -441,7 +441,7 @@ public class TestHiveMetadataFileFormatEncryptionSettings
         try {
             HiveMetadata createHiveMetadata = metadataFactory.get();
             createHiveMetadata.createTable(SESSION, table, false);
-            HiveInsertTableHandle insertTableHandle = createHiveMetadata.beginInsert(SESSION, new HiveTableHandle(TEST_DB_NAME, tableName));
+            HiveInsertTableHandle insertTableHandle = createHiveMetadata.beginInsert(SESSION, new HiveTableHandle(TEST_DB_NAME, tableName), ImmutableList.of());
 
             assertTrue(insertTableHandle.getEncryptionInformation().isPresent());
             assertEquals(
@@ -470,7 +470,7 @@ public class TestHiveMetadataFileFormatEncryptionSettings
             assertEquals(partitions.get("ds=2020-06-27").get().getParameters().get(TEST_EXTRA_METADATA), "test_algo");
 
             HiveMetadata overrideHiveMetadata = metadataFactory.get();
-            insertTableHandle = overrideHiveMetadata.beginInsert(SESSION, new HiveTableHandle(TEST_DB_NAME, tableName));
+            insertTableHandle = overrideHiveMetadata.beginInsert(SESSION, new HiveTableHandle(TEST_DB_NAME, tableName), ImmutableList.of());
             partitionUpdates = ImmutableList.of(
                     new PartitionUpdate("ds=2020-06-26", OVERWRITE, "path3", "path3", ImmutableList.of(), 0, 0, 0, false));
 
@@ -545,7 +545,7 @@ public class TestHiveMetadataFileFormatEncryptionSettings
                             new ParquetFileWriterConfig(),
                             new CacheConfig()).getSessionProperties());
 
-            insertHiveMetadata.beginInsert(newSession, new HiveTableHandle(TEST_DB_NAME, tableName));
+            insertHiveMetadata.beginInsert(newSession, new HiveTableHandle(TEST_DB_NAME, tableName), ImmutableList.of());
         }
         finally {
             dropTable(tableName);
@@ -567,7 +567,7 @@ public class TestHiveMetadataFileFormatEncryptionSettings
         try {
             HiveMetadata createHiveMetadata = metadataFactory.get();
             createHiveMetadata.createTable(SESSION, table, false);
-            HiveInsertTableHandle insertTableHandle = createHiveMetadata.beginInsert(SESSION, new HiveTableHandle(TEST_DB_NAME, tableName));
+            HiveInsertTableHandle insertTableHandle = createHiveMetadata.beginInsert(SESSION, new HiveTableHandle(TEST_DB_NAME, tableName), ImmutableList.of());
 
             List<PartitionUpdate> partitionUpdates = ImmutableList.of(
                     new PartitionUpdate("ds=2020-06-26", NEW, "path1", "path1", ImmutableList.of(), 0, 0, 0, false));
@@ -580,7 +580,7 @@ public class TestHiveMetadataFileFormatEncryptionSettings
             createHiveMetadata.commit();
 
             HiveMetadata appendHiveMetadata = metadataFactory.get();
-            insertTableHandle = appendHiveMetadata.beginInsert(SESSION, new HiveTableHandle(TEST_DB_NAME, tableName));
+            insertTableHandle = appendHiveMetadata.beginInsert(SESSION, new HiveTableHandle(TEST_DB_NAME, tableName), ImmutableList.of());
             partitionUpdates = ImmutableList.of(
                     new PartitionUpdate("ds=2020-06-26", APPEND, "path3", "path3", ImmutableList.of(), 0, 0, 0, false));
 

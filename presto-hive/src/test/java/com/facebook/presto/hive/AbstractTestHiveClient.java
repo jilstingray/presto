@@ -1439,7 +1439,7 @@ public abstract class AbstractTestHiveClient
             ConnectorMetadata metadata = transaction.getMetadata();
             ConnectorTableHandle tableHandle = getTableHandle(metadata, schemaTableName);
 
-            ConnectorInsertTableHandle insertTableHandle = metadata.beginInsert(session, tableHandle);
+            ConnectorInsertTableHandle insertTableHandle = metadata.beginInsert(session, tableHandle, ImmutableList.of());
             ConnectorPageSink sink = pageSinkProvider.createPageSink(transaction.getTransactionHandle(), session, insertTableHandle, TEST_HIVE_PAGE_SINK_CONTEXT);
             sink.appendPage(dataBefore.toPage());
             Collection<Slice> fragments = getFutureValue(sink.finish());
@@ -1536,7 +1536,7 @@ public abstract class AbstractTestHiveClient
             ConnectorMetadata metadata = transaction.getMetadata();
             ConnectorTableHandle tableHandle = getTableHandle(metadata, schemaTableName);
 
-            ConnectorInsertTableHandle insertTableHandle = metadata.beginInsert(session, tableHandle);
+            ConnectorInsertTableHandle insertTableHandle = metadata.beginInsert(session, tableHandle, ImmutableList.of());
             ConnectorPageSink sink = pageSinkProvider.createPageSink(transaction.getTransactionHandle(), session, insertTableHandle, TEST_HIVE_PAGE_SINK_CONTEXT);
             sink.appendPage(dataAfter.toPage());
             Collection<Slice> fragments = getFutureValue(sink.finish());
@@ -3284,7 +3284,7 @@ public abstract class AbstractTestHiveClient
             tableHandle = (HiveTableHandle) metadata.createTemporaryTable(session, columns, Optional.of(partitioning));
 
             // begin insert into temporary table
-            HiveInsertTableHandle insert = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle);
+            HiveInsertTableHandle insert = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle, ImmutableList.of());
 
             // insert into temporary table
             ConnectorPageSink firstSink = pageSinkProvider.createPageSink(transaction.getTransactionHandle(), session, insert, TEST_HIVE_PAGE_SINK_CONTEXT);
@@ -3365,7 +3365,7 @@ public abstract class AbstractTestHiveClient
             tableHandle = (HiveTableHandle) metadata.createTemporaryTable(session, columns, Optional.of(partitioning));
 
             // begin insert into temporary table
-            HiveInsertTableHandle firstInsert = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle);
+            HiveInsertTableHandle firstInsert = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle, ImmutableList.of());
             insertLocations.add(firstInsert.getLocationHandle().getTargetPath());
             insertLocations.add(firstInsert.getLocationHandle().getWritePath());
 
@@ -3379,7 +3379,7 @@ public abstract class AbstractTestHiveClient
             }
 
             // begin second insert into temporary table
-            HiveInsertTableHandle secondInsert = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle);
+            HiveInsertTableHandle secondInsert = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle, ImmutableList.of());
             insertLocations.add(secondInsert.getLocationHandle().getTargetPath());
             insertLocations.add(secondInsert.getLocationHandle().getWritePath());
 
@@ -4177,7 +4177,7 @@ public abstract class AbstractTestHiveClient
             MetastoreContext metastoreContext = new MetastoreContext(session.getIdentity(), session.getQueryId(), session.getClientInfo(), session.getSource(), getMetastoreHeaders(session), false, DEFAULT_COLUMN_CONVERTER_PROVIDER);
 
             // "stage" insert data
-            HiveInsertTableHandle insertTableHandle = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle);
+            HiveInsertTableHandle insertTableHandle = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle, ImmutableList.of());
             ConnectorPageSink sink = pageSinkProvider.createPageSink(transaction.getTransactionHandle(), session, insertTableHandle, pageSinkContext);
             sink.appendPage(CREATE_TABLE_DATA.toPage());
             sink.appendPage(CREATE_TABLE_DATA.toPage());
@@ -4399,7 +4399,7 @@ public abstract class AbstractTestHiveClient
             ConnectorTableHandle tableHandle = getTableHandle(metadata, tableName);
 
             // "stage" insert data
-            HiveInsertTableHandle insertTableHandle = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle);
+            HiveInsertTableHandle insertTableHandle = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle, ImmutableList.of());
             stagingPathRoot = getStagingPathRoot(insertTableHandle);
             ConnectorPageSink sink = pageSinkProvider.createPageSink(transaction.getTransactionHandle(), session, insertTableHandle, pageSinkContext);
             sink.appendPage(CREATE_TABLE_PARTITIONED_DATA_2ND.toPage());
@@ -4460,7 +4460,7 @@ public abstract class AbstractTestHiveClient
             ConnectorSession session = newSession();
             ConnectorTableHandle tableHandle = getTableHandle(metadata, tableName);
 
-            metadata.beginInsert(session, tableHandle);
+            metadata.beginInsert(session, tableHandle, ImmutableList.of());
             fail("expected failure");
         }
         catch (PrestoException e) {
@@ -4526,7 +4526,7 @@ public abstract class AbstractTestHiveClient
             ConnectorTableHandle tableHandle = getTableHandle(metadata, tableName);
 
             // "stage" insert data
-            HiveInsertTableHandle insertTableHandle = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle);
+            HiveInsertTableHandle insertTableHandle = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle, ImmutableList.of());
             stagingPathRoot = getStagingPathRoot(insertTableHandle);
             ConnectorPageSink sink = pageSinkProvider.createPageSink(transaction.getTransactionHandle(), session, insertTableHandle, pageSinkContext);
             sink.appendPage(CREATE_TABLE_PARTITIONED_DATA.toPage());
@@ -4690,7 +4690,7 @@ public abstract class AbstractTestHiveClient
         try (Transaction transaction = newTransaction()) {
             ConnectorMetadata metadata = transaction.getMetadata();
             ConnectorTableHandle tableHandle = getTableHandle(metadata, tableName);
-            HiveInsertTableHandle insertTableHandle = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle);
+            HiveInsertTableHandle insertTableHandle = (HiveInsertTableHandle) metadata.beginInsert(session, tableHandle, ImmutableList.of());
             queryId = session.getQueryId();
             writePath = getStagingPathRoot(insertTableHandle);
             targetPath = getTargetPathRoot(insertTableHandle);
@@ -5624,7 +5624,7 @@ public abstract class AbstractTestHiveClient
 
                 // Query 2: insert
                 session = newSession();
-                ConnectorInsertTableHandle insertTableHandle = metadata.beginInsert(session, tableHandle);
+                ConnectorInsertTableHandle insertTableHandle = metadata.beginInsert(session, tableHandle, ImmutableList.of());
                 rollbackIfEquals(tag, ROLLBACK_AFTER_BEGIN_INSERT);
                 writePath = getStagingPathRoot(insertTableHandle);
                 targetPath = getTargetPathRoot(insertTableHandle);

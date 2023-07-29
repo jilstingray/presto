@@ -327,7 +327,7 @@ public class CassandraMetadata
     }
 
     @Override
-    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle, List<ColumnHandle> insertedColumns)
     {
         CassandraTableHandle table = (CassandraTableHandle) tableHandle;
         if (cassandraSession.isMaterializedView(table.getSchemaTableName())) {

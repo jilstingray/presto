@@ -97,7 +97,7 @@ public class TableWriteInfo
             }
             if (target instanceof TableWriterNode.InsertReference) {
                 TableWriterNode.InsertReference insert = (TableWriterNode.InsertReference) target;
-                return Optional.of(new ExecutionWriterTarget.InsertHandle(metadata.beginInsert(session, insert.getHandle()), insert.getSchemaTableName()));
+                return Optional.of(new ExecutionWriterTarget.InsertHandle(metadata.beginInsert(session, insert.getHandle(), insert.getColumns()), insert.getSchemaTableName()));
             }
             if (target instanceof TableWriterNode.DeleteHandle) {
                 TableWriterNode.DeleteHandle delete = (TableWriterNode.DeleteHandle) target;

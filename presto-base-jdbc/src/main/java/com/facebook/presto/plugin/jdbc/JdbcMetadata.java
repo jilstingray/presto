@@ -47,6 +47,7 @@ import java.util.stream.Collectors;
 
 import static com.facebook.presto.spi.StandardErrorCode.PERMISSION_DENIED;
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.util.Objects.requireNonNull;
 
 public class JdbcMetadata
@@ -206,11 +207,17 @@ public class JdbcMetadata
     }
 
     @Override
-    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle, List<ColumnHandle> columns)
     {
-        JdbcOutputTableHandle handle = jdbcClient.beginInsertTable(session, getTableMetadata(session, tableHandle));
+        JdbcOutputTableHandle handle = jdbcClient.beginInsertTable(session, getTableMetadata(session, tableHandle), columns.stream().map(JdbcColumnHandle.class::cast).collect(toImmutableList()));
         setRollback(() -> jdbcClient.rollbackCreateTable(session, JdbcIdentity.from(session), handle));
         return handle;
+    }
+
+    @Override
+    public boolean supportsMissingColumnsOnInsert()
+    {
+        return true;
     }
 
     @Override

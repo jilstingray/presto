@@ -205,7 +205,7 @@ public class AccumuloMetadata
     }
 
     @Override
-    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle, List<ColumnHandle> insertedColumns)
     {
         checkNoRollback();
         AccumuloTableHandle handle = (AccumuloTableHandle) tableHandle;

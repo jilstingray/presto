@@ -1870,7 +1870,7 @@ public class HiveMetadata
     }
 
     @Override
-    public HiveInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public HiveInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle, List<ColumnHandle> insertedColumns)
     {
         return beginInsertInternal(session, tableHandle);
     }

@@ -14,6 +14,7 @@
 package com.facebook.presto.sql.planner.plan;
 
 import com.facebook.presto.metadata.NewTableLayout;
+import com.facebook.presto.spi.ColumnHandle;
 import com.facebook.presto.spi.ConnectorId;
 import com.facebook.presto.spi.ConnectorTableMetadata;
 import com.facebook.presto.spi.SchemaTableName;
@@ -307,17 +308,24 @@ public class TableWriterNode
             extends WriterTarget
     {
         private final TableHandle handle;
+        private final List<ColumnHandle> columns;
         private final SchemaTableName schemaTableName;
 
-        public InsertReference(TableHandle handle, SchemaTableName schemaTableName)
+        public InsertReference(TableHandle handle, List<ColumnHandle> columns, SchemaTableName schemaTableName)
         {
             this.handle = requireNonNull(handle, "handle is null");
+            this.columns = ImmutableList.copyOf(requireNonNull(columns, "columns is null"));
             this.schemaTableName = requireNonNull(schemaTableName, "schemaTableName is null");
         }
 
         public TableHandle getHandle()
         {
             return handle;
+        }
+
+        public List<ColumnHandle> getColumns()
+        {
+            return columns;
         }
 
         @Override
