@@ -68,6 +68,7 @@ public class JdbcPageSink
     private final PreparedStatement statement;
 
     private final List<Type> columnTypes;
+    private final int maxBatchSize;
     private int batchSize;
 
     public JdbcPageSink(ConnectorSession session, JdbcOutputTableHandle handle, JdbcClient jdbcClient)
@@ -89,6 +90,9 @@ public class JdbcPageSink
         }
 
         columnTypes = handle.getColumnTypes();
+
+        // Making batch size configurable allows performance tuning for insert/write-heavy workloads over multiple connections.
+        this.maxBatchSize = jdbcClient.getWriteBatchSize();
     }
 
     @Override
@@ -103,7 +107,7 @@ public class JdbcPageSink
                 statement.addBatch();
                 batchSize++;
 
-                if (batchSize >= 1000) {
+                if (batchSize >= maxBatchSize) {
                     statement.executeBatch();
                     connection.commit();
                     connection.setAutoCommit(false);

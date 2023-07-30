@@ -38,6 +38,8 @@ public interface JdbcClient
         return getSchemaNames(session, identity).contains(schema);
     }
 
+    int getWriteBatchSize();
+
     String getIdentifierQuote();
 
     Set<String> getSchemaNames(ConnectorSession session, JdbcIdentity identity);

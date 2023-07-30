@@ -75,6 +75,7 @@ import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Strings.emptyToNull;
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static com.google.common.base.Verify.verify;
@@ -119,6 +120,8 @@ public class BaseJdbcClient
     protected final boolean caseInsensitiveNameMatching;
     protected final Cache<JdbcIdentity, Map<String, String>> remoteSchemaNames;
     protected final Cache<RemoteTableNameCacheKey, Map<String, String>> remoteTableNames;
+    protected final int writeBatchSize;
+    protected final boolean isNonTransactionalInsert;
 
     public BaseJdbcClient(JdbcConnectorId connectorId, BaseJdbcConfig config, String identifierQuote, ConnectionFactory connectionFactory)
     {
@@ -132,6 +135,13 @@ public class BaseJdbcClient
                 .expireAfterWrite(config.getCaseInsensitiveNameMatchingCacheTtl().toMillis(), MILLISECONDS);
         this.remoteSchemaNames = remoteNamesCacheBuilder.build();
         this.remoteTableNames = remoteNamesCacheBuilder.build();
+        this.writeBatchSize = config.getWriteBatchSize();
+        this.isNonTransactionalInsert = config.isNonTransactionalInsert();
+    }
+
+    public int getWriteBatchSize()
+    {
+        return writeBatchSize;
     }
 
     @PreDestroy
@@ -362,6 +372,17 @@ public class BaseJdbcClient
                 columnTypes.add(column.getColumnType());
             }
 
+            if (isNonTransactionalInsert) {
+                return new JdbcOutputTableHandle(
+                        connectorId,
+                        catalog,
+                        remoteSchema,
+                        remoteTable,
+                        columnNames.build(),
+                        columnTypes.build(),
+                        Optional.empty());
+            }
+
             copyTableSchema(connection, catalog, remoteSchema, remoteTable, tableName, columnNames.build());
 
             return new JdbcOutputTableHandle(
@@ -371,7 +392,7 @@ public class BaseJdbcClient
                     remoteTable,
                     columnNames.build(),
                     columnTypes.build(),
-                    tableName);
+                    Optional.of(tableName));
         }
         catch (SQLException e) {
             throw new PrestoException(JDBC_ERROR, e);
@@ -447,7 +468,7 @@ public class BaseJdbcClient
                     remoteTable,
                     columnNames.build(),
                     columnTypes.build(),
-                    tableName);
+                    Optional.of(tableName));
         }
     }
 
@@ -475,7 +496,7 @@ public class BaseJdbcClient
         renameTable(
                 identity,
                 handle.getCatalogName(),
-                new SchemaTableName(handle.getSchemaName(), handle.getTemporaryTableName()),
+                new SchemaTableName(handle.getSchemaName(), handle.getTemporaryTableName().orElseThrow(() -> new IllegalStateException("Temporary table name missing"))),
                 new SchemaTableName(handle.getSchemaName(), handle.getTableName()));
     }
 
@@ -513,7 +534,11 @@ public class BaseJdbcClient
     @Override
     public void finishInsertTable(ConnectorSession session, JdbcIdentity identity, JdbcOutputTableHandle handle)
     {
-        String temporaryTable = quoted(handle.getCatalogName(), handle.getSchemaName(), handle.getTemporaryTableName());
+        if (isNonTransactionalInsert) {
+            checkState(!handle.getTemporaryTableName().isPresent(), "Unexpected use of temporary table when non transactional inserts are enabled");
+            return;
+        }
+        String temporaryTable = quoted(handle.getCatalogName(), handle.getSchemaName(), handle.getTemporaryTableName().get());
         String targetTable = quoted(handle.getCatalogName(), handle.getSchemaName(), handle.getTableName());
         String columns = Joiner.on(", ").join(transform(handle.getColumnNames(), columnName -> quoted((String) columnName)));
         String insertSql = format("INSERT INTO %s (%s) SELECT %s FROM %s", targetTable, columns, columns, temporaryTable);
@@ -626,12 +651,14 @@ public class BaseJdbcClient
     @Override
     public void rollbackCreateTable(ConnectorSession session, JdbcIdentity identity, JdbcOutputTableHandle handle)
     {
-        dropTable(session, identity, new JdbcTableHandle(
-                handle.getConnectorId(),
-                new SchemaTableName(handle.getSchemaName(), handle.getTemporaryTableName()),
-                handle.getCatalogName(),
-                handle.getSchemaName(),
-                handle.getTemporaryTableName()));
+        if (handle.getTemporaryTableName().isPresent()) {
+            dropTable(session, identity, new JdbcTableHandle(
+                    handle.getConnectorId(),
+                    new SchemaTableName(handle.getSchemaName(), handle.getTemporaryTableName().get()),
+                    handle.getCatalogName(),
+                    handle.getSchemaName(),
+                    handle.getTemporaryTableName().get()));
+        }
     }
 
     @Override
@@ -640,7 +667,7 @@ public class BaseJdbcClient
         String vars = Joiner.on(',').join(nCopies(handle.getColumnNames().size(), "?"));
         return format(
                 "INSERT INTO %s (%s) VALUES (%s)",
-                quoted(handle.getCatalogName(), handle.getSchemaName(), handle.getTemporaryTableName()),
+                quoted(handle.getCatalogName(), handle.getSchemaName(), handle.getTemporaryTableName().orElseGet(handle::getTableName)),
                 handle.getColumnNames().stream().map(this::quoted).collect(joining(", ")),
                 vars);
     }

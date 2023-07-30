@@ -24,6 +24,7 @@ import javax.annotation.Nullable;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.String.format;
@@ -38,7 +39,7 @@ public class JdbcOutputTableHandle
     private final String tableName;
     private final List<String> columnNames;
     private final List<Type> columnTypes;
-    private final String temporaryTableName;
+    private final Optional<String> temporaryTableName;
 
     @JsonCreator
     public JdbcOutputTableHandle(
@@ -48,13 +49,13 @@ public class JdbcOutputTableHandle
             @JsonProperty("tableName") String tableName,
             @JsonProperty("columnNames") List<String> columnNames,
             @JsonProperty("columnTypes") List<Type> columnTypes,
-            @JsonProperty("temporaryTableName") String temporaryTableName)
+            @JsonProperty("temporaryTableName") Optional<String> temporaryTableName)
     {
         this.connectorId = requireNonNull(connectorId, "connectorId is null");
         this.catalogName = catalogName;
         this.schemaName = schemaName;
         this.tableName = requireNonNull(tableName, "tableName is null");
-        this.temporaryTableName = requireNonNull(temporaryTableName, "temporaryTableName is null");
+        this.temporaryTableName = temporaryTableName;
 
         requireNonNull(columnNames, "columnNames is null");
         requireNonNull(columnTypes, "columnTypes is null");
@@ -102,7 +103,7 @@ public class JdbcOutputTableHandle
     }
 
     @JsonProperty
-    public String getTemporaryTableName()
+    public Optional<String> getTemporaryTableName()
     {
         return temporaryTableName;
     }

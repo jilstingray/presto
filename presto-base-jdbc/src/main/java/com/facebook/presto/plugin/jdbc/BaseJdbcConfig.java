@@ -14,17 +14,24 @@
 package com.facebook.presto.plugin.jdbc;
 
 import com.facebook.airlift.configuration.Config;
+import com.facebook.airlift.configuration.ConfigDescription;
 import com.facebook.airlift.configuration.ConfigSecuritySensitive;
+import com.facebook.presto.spi.PrestoException;
 import io.airlift.units.Duration;
 import io.airlift.units.MinDuration;
 
 import javax.annotation.Nullable;
+import javax.validation.constraints.Max;
+import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
 
+import static com.facebook.presto.spi.StandardErrorCode.CONFIGURATION_INVALID;
+import static java.lang.String.format;
 import static java.util.concurrent.TimeUnit.MINUTES;
 
 public class BaseJdbcConfig
 {
+    static final int MAX_ALLOWED_WRITE_BATCH_SIZE = 1000000;
     private String connectionUrl;
     private String connectionUser;
     private String connectionPassword;
@@ -32,6 +39,12 @@ public class BaseJdbcConfig
     private String passwordCredentialName;
     private boolean caseInsensitiveNameMatching;
     private Duration caseInsensitiveNameMatchingCacheTtl = new Duration(1, MINUTES);
+
+    private int writeBatchSize = 1000;
+
+    // Do not create temporary table during insert.
+    // The write operation can fail and leave the table in an inconsistent state, though it will be much faster.
+    private boolean nonTransactionalInsert;
 
     @NotNull
     public String getConnectionUrl()
@@ -122,6 +135,40 @@ public class BaseJdbcConfig
     public BaseJdbcConfig setCaseInsensitiveNameMatchingCacheTtl(Duration caseInsensitiveNameMatchingCacheTtl)
     {
         this.caseInsensitiveNameMatchingCacheTtl = caseInsensitiveNameMatchingCacheTtl;
+        return this;
+    }
+
+    @Min(1)
+    @Max(MAX_ALLOWED_WRITE_BATCH_SIZE)
+    public int getWriteBatchSize()
+    {
+        return writeBatchSize;
+    }
+
+    @Config("write-batch-size")
+    @ConfigDescription("Maximum number of rows to write in a single batch")
+    public BaseJdbcConfig setWriteBatchSize(int writeBatchSize)
+    {
+        if (writeBatchSize < 1) {
+            throw new PrestoException(CONFIGURATION_INVALID, format("%s must be greater than 0, given %s", writeBatchSize, writeBatchSize));
+        }
+        if (writeBatchSize > MAX_ALLOWED_WRITE_BATCH_SIZE) {
+            throw new PrestoException(CONFIGURATION_INVALID, format("%s cannot exceed %s, given %s", writeBatchSize, MAX_ALLOWED_WRITE_BATCH_SIZE, writeBatchSize));
+        }
+        this.writeBatchSize = writeBatchSize;
+        return this;
+    }
+
+    public boolean isNonTransactionalInsert()
+    {
+        return nonTransactionalInsert;
+    }
+
+    @Config("non-transactional-insert-enabled")
+    @ConfigDescription("Do not create temporary table during insert")
+    public BaseJdbcConfig setNonTransactionalInsert(boolean nonTransactionalInsert)
+    {
+        this.nonTransactionalInsert = nonTransactionalInsert;
         return this;
     }
 }
