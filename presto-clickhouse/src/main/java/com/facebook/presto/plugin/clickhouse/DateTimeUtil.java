@@ -25,27 +25,10 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoField;
 
-import static java.util.concurrent.TimeUnit.SECONDS;
-
 public final class DateTimeUtil
 {
     private DateTimeUtil()
     {
-    }
-
-    public static Date convertZonedDaysToDate(long zonedDays)
-    {
-        long epochMillis;
-
-        try {
-            ZonedDateTime zonedDateTime = ZonedDateTime.of(LocalDate.ofEpochDay(zonedDays), LocalTime.MIN, ZoneId.systemDefault());
-            epochMillis = SECONDS.toMillis(zonedDateTime.toEpochSecond());
-        }
-        catch (DateTimeException ex) {
-            epochMillis = zonedDays < 0 ? Long.MIN_VALUE : Long.MAX_VALUE;
-        }
-
-        return new Date(epochMillis);
     }
 
     public static long convertDateToZonedDays(Date date)

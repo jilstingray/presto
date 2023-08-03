@@ -13,23 +13,13 @@
  */
 package com.facebook.presto.plugin.clickhouse;
 
-import com.facebook.presto.spi.Plugin;
-import com.facebook.presto.spi.connector.ConnectorFactory;
-import com.google.common.collect.ImmutableList;
-
-import static com.google.common.base.MoreObjects.firstNonNull;
+import com.facebook.presto.plugin.jdbc.JdbcPlugin;
 
 public class ClickHousePlugin
-        implements Plugin
+        extends JdbcPlugin
 {
-    @Override
-    public Iterable<ConnectorFactory> getConnectorFactories()
+    public ClickHousePlugin()
     {
-        return ImmutableList.of(new ClickHouseConnectorFactory("clickhouse", getClassLoader()));
-    }
-
-    private static ClassLoader getClassLoader()
-    {
-        return firstNonNull(Thread.currentThread().getContextClassLoader(), ClickHousePlugin.class.getClassLoader());
+        super("clickhouse", new ClickHouseModule());
     }
 }

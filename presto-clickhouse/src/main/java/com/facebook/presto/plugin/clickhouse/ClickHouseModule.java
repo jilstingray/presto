@@ -13,62 +13,32 @@
  */
 package com.facebook.presto.plugin.clickhouse;
 
-import com.facebook.presto.plugin.clickhouse.optimization.ClickHouseQueryGenerator;
+import com.facebook.presto.plugin.jdbc.BaseJdbcConfig;
+import com.facebook.presto.plugin.jdbc.JdbcClient;
+import com.facebook.presto.plugin.jdbc.TablePropertiesProvider;
 import com.facebook.presto.spi.connector.ConnectorAccessControl;
 import com.facebook.presto.spi.procedure.Procedure;
 import com.google.inject.Binder;
 import com.google.inject.Module;
-import com.google.inject.Provides;
 import com.google.inject.Scopes;
-import com.google.inject.Singleton;
-import com.google.inject.multibindings.Multibinder;
-import ru.yandex.clickhouse.ClickHouseDriver;
-
-import java.sql.SQLException;
 
 import static com.facebook.airlift.configuration.ConfigBinder.configBinder;
+import static com.facebook.presto.plugin.jdbc.JdbcModule.tablePropertiesProviderBinder;
 import static com.google.inject.multibindings.Multibinder.newSetBinder;
 import static com.google.inject.multibindings.OptionalBinder.newOptionalBinder;
-import static java.util.Objects.requireNonNull;
 
 public class ClickHouseModule
         implements Module
 {
-    private final String connectorId;
-
-    public ClickHouseModule(String connectorId)
-    {
-        this.connectorId = requireNonNull(connectorId, "connector id is null");
-    }
-
     @Override
     public void configure(Binder binder)
     {
         newOptionalBinder(binder, ConnectorAccessControl.class);
         newSetBinder(binder, Procedure.class);
-        binder.bind(ClickHouseConnectorId.class).toInstance(new ClickHouseConnectorId(connectorId));
-        binder.bind(ClickHouseMetadataFactory.class).in(Scopes.SINGLETON);
-        binder.bind(ClickHouseClient.class).in(Scopes.SINGLETON);
-        binder.bind(ClickHouseSplitManager.class).in(Scopes.SINGLETON);
-        binder.bind(ClickHouseRecordSetProvider.class).in(Scopes.SINGLETON);
-        binder.bind(ClickHousePageSinkProvider.class).in(Scopes.SINGLETON);
-        binder.bind(ClickHouseQueryGenerator.class).in(Scopes.SINGLETON);
-        binder.bind(ClickHouseConnector.class).in(Scopes.SINGLETON);
         bindTablePropertiesProvider(binder, ClickHouseTableProperties.class);
+        binder.bind(JdbcClient.class).to(ClickHouseClient.class).in(Scopes.SINGLETON);
+        configBinder(binder).bindConfig(BaseJdbcConfig.class);
         configBinder(binder).bindConfig(ClickHouseConfig.class);
-    }
-
-    @Provides
-    @Singleton
-    public static ConnectionFactory connectionFactory(ClickHouseConfig clickhouseConfig)
-            throws SQLException
-    {
-        return new DriverConnectionFactory(new ClickHouseDriver(), clickhouseConfig);
-    }
-
-    public static Multibinder<TablePropertiesProvider> tablePropertiesProviderBinder(Binder binder)
-    {
-        return newSetBinder(binder, TablePropertiesProvider.class);
     }
 
     public static void bindTablePropertiesProvider(Binder binder, Class<? extends TablePropertiesProvider> type)

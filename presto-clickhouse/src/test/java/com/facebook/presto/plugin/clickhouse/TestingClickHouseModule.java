@@ -13,15 +13,14 @@
  */
 package com.facebook.presto.plugin.clickhouse;
 
+import com.facebook.presto.plugin.jdbc.BaseJdbcConfig;
+import com.facebook.presto.plugin.jdbc.JdbcConnectorId;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Binder;
 import com.google.inject.Module;
 import com.google.inject.Provides;
-import ru.yandex.clickhouse.ClickHouseDriver;
 
 import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
 
 import static com.facebook.airlift.configuration.ConfigBinder.configBinder;
 import static java.lang.String.format;
@@ -32,18 +31,14 @@ public class TestingClickHouseModule
     @Override
     public void configure(Binder binder)
     {
+        configBinder(binder).bindConfig(BaseJdbcConfig.class);
         configBinder(binder).bindConfig(ClickHouseConfig.class);
     }
 
     @Provides
-    public ClickHouseClient provideJdbcClient(ClickHouseConnectorId id, ClickHouseConfig config)
+    public ClickHouseClient provideJdbcClient(JdbcConnectorId id, BaseJdbcConfig baseJdbcConfig, ClickHouseConfig clickHouseConfig)
     {
-        Properties connectionProperties = new Properties();
-        return new ClickHouseClient(id, config, new DriverConnectionFactory(new ClickHouseDriver(),
-                config.getConnectionUrl(),
-                Optional.ofNullable(config.getUserCredential()),
-                Optional.ofNullable(config.getPasswordCredential()),
-                connectionProperties));
+        return new ClickHouseClient(id, baseJdbcConfig, clickHouseConfig);
     }
 
     public static Map<String, String> createProperties()

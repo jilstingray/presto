@@ -17,7 +17,8 @@ import com.facebook.presto.common.type.CharType;
 import com.facebook.presto.common.type.DecimalType;
 import com.facebook.presto.common.type.Decimals;
 import com.facebook.presto.common.type.VarcharType;
-import com.facebook.presto.spi.PrestoException;
+import com.facebook.presto.plugin.jdbc.JdbcTypeHandle;
+import com.facebook.presto.plugin.jdbc.ReadMapping;
 import com.google.common.base.CharMatcher;
 
 import java.sql.Date;
@@ -44,10 +45,9 @@ import static com.facebook.presto.common.type.TinyintType.TINYINT;
 import static com.facebook.presto.common.type.VarbinaryType.VARBINARY;
 import static com.facebook.presto.common.type.VarcharType.createUnboundedVarcharType;
 import static com.facebook.presto.common.type.VarcharType.createVarcharType;
-import static com.facebook.presto.plugin.clickhouse.ClickHouseErrorCode.JDBC_ERROR;
 import static com.facebook.presto.plugin.clickhouse.DateTimeUtil.getMillisOfDay;
-import static com.facebook.presto.plugin.clickhouse.ReadMapping.longReadMapping;
-import static com.facebook.presto.plugin.clickhouse.ReadMapping.sliceReadMapping;
+import static com.facebook.presto.plugin.jdbc.ReadMapping.longReadMapping;
+import static com.facebook.presto.plugin.jdbc.ReadMapping.sliceReadMapping;
 import static io.airlift.slice.Slices.utf8Slice;
 import static io.airlift.slice.Slices.wrappedBuffer;
 import static java.lang.Float.floatToRawIntBits;
@@ -144,10 +144,9 @@ public final class StandardReadMappings
         });
     }
 
-    public static Optional<ReadMapping> jdbcTypeToPrestoType(ClickHouseTypeHandle type, boolean mapStringAsVarchar)
+    public static Optional<ReadMapping> jdbcTypeToPrestoType(JdbcTypeHandle type, boolean mapStringAsVarchar)
     {
-        String jdbcTypeName = type.getJdbcTypeName()
-                .orElseThrow(() -> new PrestoException(JDBC_ERROR, "Type name is missing: " + type));
+        String jdbcTypeName = requireNonNull(type.getJdbcTypeName(), "Type name is missing: " + type);
         int columnSize = type.getColumnSize();
 
         switch (jdbcTypeName.replaceAll("\\(.*\\)$", "")) {

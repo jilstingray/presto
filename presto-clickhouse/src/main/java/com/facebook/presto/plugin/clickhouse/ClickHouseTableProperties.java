@@ -14,6 +14,7 @@
 package com.facebook.presto.plugin.clickhouse;
 
 import com.facebook.presto.common.type.ArrayType;
+import com.facebook.presto.plugin.jdbc.TablePropertiesProvider;
 import com.facebook.presto.spi.session.PropertyMetadata;
 import com.google.common.collect.ImmutableList;
 

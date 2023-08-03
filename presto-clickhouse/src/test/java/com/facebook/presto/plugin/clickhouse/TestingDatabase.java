@@ -13,14 +13,13 @@
  */
 package com.facebook.presto.plugin.clickhouse;
 
+import com.facebook.presto.plugin.jdbc.BaseJdbcConfig;
+import com.facebook.presto.plugin.jdbc.JdbcConnectorId;
 import com.facebook.presto.spi.ConnectorSession;
-import ru.yandex.clickhouse.ClickHouseDriver;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.Optional;
-import java.util.Properties;
 
 import static com.facebook.presto.testing.TestingSession.testSessionBuilder;
 
@@ -38,14 +37,14 @@ final class TestingDatabase
             throws SQLException
     {
         testingClickHouseServer = new TestingClickHouseServer();
-        Properties connectionProperties = new Properties();
-        clickHouseClient = new ClickHouseClient(new ClickHouseConnectorId(CONNECTOR_ID),
-                new ClickHouseConfig(),
-                new DriverConnectionFactory(new ClickHouseDriver(),
-                        testingClickHouseServer.getJdbcUrl(),
-                Optional.ofNullable(testingClickHouseServer.getClickHouseContainer().getUsername()),
-                Optional.ofNullable(testingClickHouseServer.getClickHouseContainer().getPassword()),
-                connectionProperties));
+        BaseJdbcConfig config = new BaseJdbcConfig();
+        config.setConnectionUrl(testingClickHouseServer.getJdbcUrl());
+        config.setUserCredentialName(testingClickHouseServer.getClickHouseContainer().getUsername());
+        config.setConnectionPassword(testingClickHouseServer.getClickHouseContainer().getPassword());
+        clickHouseClient = new ClickHouseClient(
+                new JdbcConnectorId(CONNECTOR_ID),
+                config,
+                new ClickHouseConfig());
         connection = DriverManager.getConnection(testingClickHouseServer.getJdbcUrl());
         connection.createStatement().execute("CREATE DATABASE example");
 
