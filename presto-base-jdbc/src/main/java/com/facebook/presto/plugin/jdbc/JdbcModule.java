@@ -18,6 +18,7 @@ import com.facebook.presto.spi.procedure.Procedure;
 import com.google.inject.Binder;
 import com.google.inject.Module;
 import com.google.inject.Scopes;
+import com.google.inject.multibindings.Multibinder;
 
 import static com.facebook.airlift.configuration.ConfigBinder.configBinder;
 import static com.google.inject.multibindings.Multibinder.newSetBinder;
@@ -45,7 +46,18 @@ public class JdbcModule
         binder.bind(JdbcRecordSetProvider.class).in(Scopes.SINGLETON);
         binder.bind(JdbcPageSinkProvider.class).in(Scopes.SINGLETON);
         newOptionalBinder(binder, JdbcSessionPropertiesProvider.class);
+        tablePropertiesProviderBinder(binder);
         binder.bind(JdbcConnector.class).in(Scopes.SINGLETON);
         configBinder(binder).bindConfig(JdbcMetadataConfig.class);
+    }
+
+    public static Multibinder<TablePropertiesProvider> tablePropertiesProviderBinder(Binder binder)
+    {
+        return newSetBinder(binder, TablePropertiesProvider.class);
+    }
+
+    public static void bindTablePropertiesProvider(Binder binder, Class<? extends TablePropertiesProvider> type)
+    {
+        tablePropertiesProviderBinder(binder).addBinding().to(type).in(Scopes.SINGLETON);
     }
 }

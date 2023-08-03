@@ -105,7 +105,7 @@ public class JdbcMetadata
         for (JdbcColumnHandle column : jdbcClient.getColumns(session, handle)) {
             columnMetadata.add(column.getColumnMetadata());
         }
-        return new ConnectorTableMetadata(handle.getSchemaTableName(), columnMetadata.build());
+        return new ConnectorTableMetadata(handle.getSchemaTableName(), columnMetadata.build(), jdbcClient.getTableProperties(session, handle));
     }
 
     @Override

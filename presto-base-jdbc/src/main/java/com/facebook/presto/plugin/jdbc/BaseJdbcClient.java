@@ -86,6 +86,7 @@ import static com.google.inject.internal.cglib.core.$CollectionUtils.transform;
 import static java.lang.String.format;
 import static java.lang.String.join;
 import static java.sql.ResultSetMetaData.columnNullable;
+import static java.util.Collections.emptyMap;
 import static java.util.Collections.nCopies;
 import static java.util.Locale.ENGLISH;
 import static java.util.Objects.requireNonNull;
@@ -807,6 +808,12 @@ public class BaseJdbcClient
     public TableStatistics getTableStatistics(ConnectorSession session, JdbcTableHandle handle, List<JdbcColumnHandle> columnHandles, TupleDomain<ColumnHandle> tupleDomain)
     {
         return TableStatistics.empty();
+    }
+
+    @Override
+    public Map<String, Object> getTableProperties(ConnectorSession session, JdbcTableHandle handle)
+    {
+        return emptyMap();
     }
 
     protected void execute(Connection connection, String query)

@@ -28,6 +28,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -100,4 +101,6 @@ public interface JdbcClient
             throws SQLException;
 
     TableStatistics getTableStatistics(ConnectorSession session, JdbcTableHandle handle, List<JdbcColumnHandle> columnHandles, TupleDomain<ColumnHandle> tupleDomain);
+
+    Map<String, Object> getTableProperties(ConnectorSession session, JdbcTableHandle handle);
 }

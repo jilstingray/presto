@@ -49,6 +49,7 @@ import static com.facebook.presto.spi.connector.EmptyConnectorCommitHandle.INSTA
 import static com.facebook.presto.spi.transaction.IsolationLevel.READ_COMMITTED;
 import static com.facebook.presto.spi.transaction.IsolationLevel.checkConnectorSupports;
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Sets.immutableEnumSet;
 import static java.util.Objects.requireNonNull;
 
@@ -71,6 +72,7 @@ public class JdbcConnector
     private final RowExpressionService rowExpressionService;
     private final JdbcClient jdbcClient;
     private final List<PropertyMetadata<?>> sessionProperties;
+    private final List<PropertyMetadata<?>> tableProperties;
 
     @Inject
     public JdbcConnector(
@@ -85,7 +87,8 @@ public class JdbcConnector
             StandardFunctionResolution functionResolution,
             RowExpressionService rowExpressionService,
             JdbcClient jdbcClient,
-            Optional<JdbcSessionPropertiesProvider> sessionPropertiesProvider)
+            Optional<JdbcSessionPropertiesProvider> sessionPropertiesProvider,
+            Set<TablePropertiesProvider> tableProperties)
     {
         this.lifeCycleManager = requireNonNull(lifeCycleManager, "lifeCycleManager is null");
         this.jdbcMetadataFactory = requireNonNull(jdbcMetadataFactory, "jdbcMetadataFactory is null");
@@ -99,6 +102,9 @@ public class JdbcConnector
         this.rowExpressionService = requireNonNull(rowExpressionService, "rowExpressionService is null");
         this.jdbcClient = requireNonNull(jdbcClient, "jdbcClient is null");
         this.sessionProperties = requireNonNull(sessionPropertiesProvider, "sessionPropertiesProvider is null").map(JdbcSessionPropertiesProvider::getSessionProperties).orElse(ImmutableList.of());
+        this.tableProperties = requireNonNull(tableProperties, "tableProperties is null").stream()
+                .flatMap(tablePropertiesProvider -> tablePropertiesProvider.getTableProperties().stream())
+                .collect(toImmutableList());
     }
 
     @Override
@@ -184,6 +190,12 @@ public class JdbcConnector
     public List<PropertyMetadata<?>> getSessionProperties()
     {
         return sessionProperties;
+    }
+
+    @Override
+    public List<PropertyMetadata<?>> getTableProperties()
+    {
+        return tableProperties;
     }
 
     @Override
